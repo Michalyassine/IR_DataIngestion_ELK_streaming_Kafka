@@ -3,7 +3,7 @@
 A real-time log processing and anomaly detection system for Firefox build logs using ELK Stack, Kafka, and Machine Learning.
 
 ## Architecture
-  ![Architecture Diagram](./End-to-End-Architecture.png)
+  ![Architecture Diagram](https://github.com/Michalyassine/IR_DataIngestion_ELK_streaming_Kafka/blob/main/End-to-End%20Data%20Pipeline%20ELK.png)
 
 - **Kafka**: Message streaming for log ingestion
 - **Logstash**: Log parsing and transformation
