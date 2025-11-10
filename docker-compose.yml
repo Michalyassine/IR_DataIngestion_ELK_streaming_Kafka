@@ -1,0 +1,99 @@
+version: '3.7'
+
+volumes:
+  elasticsearch_data:
+  kafka_data:
+
+services:
+
+  # 1. Kafka Broker (using KRaft mode - Fixed Command and Port 9094)
+  # 1. Kafka Broker (KRaft Mode - Final Stabilized Configuration)
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    ports:
+      # Map host port 9094 to container port 9094
+      - "9094:9094" 
+    environment:
+      # --- KRaft Configuration ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      
+      # Define listeners: INTERNAL for inter-container, EXTERNAL for host access, CONTROLLER for KRaft
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka:9093
+      
+      # Advertise listeners: Use the specific IP/Port for host clients to connect to
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://127.0.0.1:9094  # <--- CRITICAL CHANGE
+      
+      # Map security protocols to listeners
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      
+      # --- Standard Configuration ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    
+    # Use the fixed command for reliable KRaft initialization
+    command:
+      - /bin/bash
+      - -c
+      - |
+        CLUSTER_ID=$$(/usr/bin/kafka-storage random-uuid);
+        /usr/bin/kafka-storage format -t $$CLUSTER_ID -c /etc/kafka/config/kraft/server.properties;
+        /etc/confluent/docker/run
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+ 
+
+  # 2. Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
+    container_name: elasticsearch
+    environment:
+      # Required for single-node development
+      discovery.type: single-node
+      # Disable security for development simplicity
+      xpack.security.enabled: false 
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+
+  
+
+  # 3. Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.2
+    container_name: logstash
+    depends_on:
+      - elasticsearch
+      - kafka
+    volumes:
+      # Mount the logstash pipeline configuration (config/logstash.conf)
+      - ./config/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    ports:
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+
+ 
+
+  # 4. Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.2
+    container_name: kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    environment:
+      # Connect Kibana to Elasticsearch's internal hostname/port
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
